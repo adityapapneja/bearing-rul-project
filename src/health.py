@@ -6,9 +6,9 @@ from scipy.stats import spearmanr
 RUNS = [("set1", "b3"), ("set1", "b4"), ("set2", "b1"), ("set3", "b3")]
 
 
-def prepare(df, features, win=15, lo=0.15, hi=0.40, burn_in=0.12):
+def prepare(df, features, win=15, lo=0.15, hi=0.40, burn_in=0.12, runs_list=None):
     runs = {}
-    for s, b in RUNS:
+    for s, b in (runs_list or RUNS):
         g = df[(df["set"] == s) & (df["bearing"] == b)]
         g = g[g["rms"] > 0.2 * g["rms"].median()]
         u = g.groupby("idx")[features].mean()
