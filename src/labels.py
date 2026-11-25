@@ -24,6 +24,20 @@ def find_onset(u, ratio_thr=1.25, n_consec=20, start=0.40):
     hit = (ok.rolling(n_consec).sum() == n_consec).to_numpy()
     return int(hit.argmax()) - n_consec + 1 if hit.any() else None
 
+
+def add_labels(u, onset):
+    """Return a copy with binary anomaly labels from the positional onset onward."""
+    anomaly = np.zeros(len(u), dtype=np.int8)
+    if onset is not None:
+        if not 0 <= onset < len(u):
+            raise ValueError("onset must be a valid row position or None")
+        anomaly[onset:] = 1
+
+    labeled = u.copy()
+    labeled["anomaly"] = anomaly
+    return labeled
+
+
 def op_hours(u, max_step_min=15):
     """Cumulative operating time: any gap longer than max_step_min counts as max_step_min."""
     dt = u["timestamp"].diff().dt.total_seconds().div(3600).fillna(0)

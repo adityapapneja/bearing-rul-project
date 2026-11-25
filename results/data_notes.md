@@ -8,3 +8,7 @@
 - RUL cap: 50 h (median onset-to-end duration is 48.75 h in both calendar and operating time).
 - Calendar vs operating onset-to-end hours: B3 11.7/4.9, B4 97.5/72.3, Set 2 56.5/56.5, Set 3 41.0/41.0.
 - Labels use calendar hours; operating hours are used as an ablation.
+- Anomaly detectors: fit on blocked-CV baseline (life 0.15-0.40); threshold = 99.5% quantile of
+  out-of-fold scores; alarm = 10 consecutive snapshots. Narrow baseline (0.15-0.32) left thresholds
+  inside drifting healthy data (start_above up to 0.80), so it was rejected.
+- Margin = earliest never-failed-bearing alarm minus failed-bearing alarm; |margin| < 0.1 treated as a tie.
