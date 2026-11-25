@@ -66,3 +66,74 @@ def evaluate_run(Z, features, model, y_tight, y_loose, rul_hours, q=0.995, n_con
     pre = te & (y_loose.reindex(Z.index).to_numpy() == 0)     # test stretch before the loose onset
     out["pre_onset_alarm_rate"] = float(np.mean(s[pre] > thr)) if pre.any() else np.nan
     return out, s, thr
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# RUL evaluation metrics & Leave-One-Run-Out (LORO) cross-validation
+# ═══════════════════════════════════════════════════════════════════════
+
+def rmse(y_true, y_pred):
+    """Root Mean Squared Error."""
+    y_true, y_pred = np.asarray(y_true, dtype=float), np.asarray(y_pred, dtype=float)
+    return float(np.sqrt(np.mean((y_pred - y_true) ** 2)))
+
+
+def mae(y_true, y_pred):
+    """Mean Absolute Error."""
+    y_true, y_pred = np.asarray(y_true, dtype=float), np.asarray(y_pred, dtype=float)
+    return float(np.mean(np.abs(y_pred - y_true)))
+
+
+def phm_score(y_true, y_pred, mean=True):
+    """
+    PHM08 / NASA C-MAPSS asymmetric scoring function.
+    d = y_pred - y_true:
+      - early prediction (d < 0): exp(-d / 13) - 1
+      - late  prediction (d >= 0): exp( d / 10) - 1  (penalizes late predictions more)
+    When `mean=True` (default), returns the per-snapshot mean score so runs of
+    different lengths are directly comparable; `mean=False` returns the raw sum.
+    """
+    d = np.asarray(y_pred, dtype=float) - np.asarray(y_true, dtype=float)
+    d = np.clip(d, -200.0, 200.0)   # guard against overflow on extreme outliers
+    s = np.where(d < 0, np.exp(-d / 13.0) - 1.0, np.exp(d / 10.0) - 1.0)
+    return float(np.mean(s) if mean else np.sum(s))
+
+
+def smooth_predictions(y_pred, win=15):
+    """Causal rolling-median smoothing of RUL predictions."""
+    return pd.Series(y_pred).rolling(win, min_periods=1).median().to_numpy()
+
+
+def evaluate_rul_loro(runs_dict, make_model, cap=50.0, late_thr=25.0, smooth_win=None):
+    """
+    Leave-One-Run-Out (LORO) cross-validation across all run-to-failure bearings.
+
+    runs_dict : dict {run_name: (X, y_rul)} where X is (N, D) and y_rul is (N,)
+    make_model: zero-arg callable returning a fresh RUL model with .fit(train_runs) / .predict(X)
+    Returns (summary_df, predictions_dict) where predictions_dict[run_name] = (y_true, y_pred).
+    """
+    rows = []
+    preds = {}
+    run_names = list(runs_dict.keys())
+    for test_name in run_names:
+        train_runs = [runs_dict[n] for n in run_names if n != test_name]
+        X_test, y_test = runs_dict[test_name]
+
+        model = make_model()
+        model.fit(train_runs)
+        y_pred = np.clip(model.predict(X_test), 0.0, cap)
+        if smooth_win is not None and smooth_win > 1:
+            y_pred = smooth_predictions(y_pred, win=smooth_win)
+
+        preds[test_name] = (y_test, y_pred)
+        late = y_test <= late_thr
+        rows.append({
+            "model": getattr(model, "name", type(model).__name__),
+            "run": test_name,
+            "rmse": rmse(y_test, y_pred),
+            "mae": mae(y_test, y_pred),
+            "phm_mean": phm_score(y_test, y_pred, mean=True),
+            "rmse_late": rmse(y_test[late], y_pred[late]) if late.any() else np.nan,
+            "mae_late": mae(y_test[late], y_pred[late]) if late.any() else np.nan,
+        })
+    return pd.DataFrame(rows), preds
